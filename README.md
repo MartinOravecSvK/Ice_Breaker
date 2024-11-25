@@ -28,3 +28,27 @@ Alternatively, use Docker Compose:
 ```bash
 docker-compose up
 ```
+
+### 3. Access the shell
+
+```bash
+docker-compose exec ubuntu-x86 bash
+```
+
+### 4. Create venv (inside the container)
+
+```bash
+python3 -m venv venv
+```
+
+### 5. Activate environment
+
+```bash
+source venv/bin/activate
+```
+
+### 6. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```

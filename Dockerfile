@@ -11,6 +11,7 @@ RUN dpkg --add-architecture i386 && \
         gdb \
         python3 \
         python3-pip \
+        python3-venv \
         make \
         wget \
         curl \
@@ -19,8 +20,6 @@ RUN dpkg --add-architecture i386 && \
         binutils \
         git && \
     apt-get clean
-
-RUN pip3 install --no-cache-dir pwntools capstone
 
 WORKDIR /workspace
 

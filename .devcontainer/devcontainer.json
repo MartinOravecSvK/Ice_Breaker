@@ -1,0 +1,22 @@
+{
+  "name": "Ubuntu x86 Dev Environment",
+  "dockerComposeFile": [
+    "./docker-compose.yml"
+  ],
+  "service": "ubuntu-x86",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-vscode.remote-containers"
+      ],
+      "settings": {
+        "python.pythonPath": "/workspace/venv/bin/python",
+        "python.venvPath": "/workspace/venv",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true
+      }
+    }
+  }
+}
