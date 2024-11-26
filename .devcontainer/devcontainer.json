@@ -1,22 +1,17 @@
 {
-  "name": "Ubuntu x86 Dev Environment",
+  "name": "Ubuntu ARM64 Dev Environment",
   "dockerComposeFile": [
-    "./docker-compose.yml"
+    "../docker-compose.yml"
   ],
-  "service": "ubuntu-x86",
+  "service": "ubuntu-arm64",
   "workspaceFolder": "/workspace",
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-python.python",
-        "ms-vscode.remote-containers"
-      ],
-      "settings": {
-        "python.pythonPath": "/workspace/venv/bin/python",
-        "python.venvPath": "/workspace/venv",
-        "python.linting.enabled": true,
-        "python.linting.pylintEnabled": true
-      }
+        "ms-vscode-remote.remote-containers"
+      ]
     }
-  }
+  },
+  "remoteUser": "root"
 }

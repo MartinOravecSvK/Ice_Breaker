@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  ubuntu-arm64:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    stdin_open: true
+    tty: true
+    volumes:
+      - .:/workspace
