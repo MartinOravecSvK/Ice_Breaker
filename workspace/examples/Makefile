@@ -1,11 +1,12 @@
 CC = gcc
+# CC = arm-linux-gnueabi-gcc
 DEFAULT_CFLAGS = -fno-stack-protector -z execstack -no-pie -Wall -Wextra
 OUTPUT_DIR = bin
 
-vuln_program_1_CFLAGS = -g -fno-stack-protector -z execstack -no-pie -Wall -Wextra
+vuln_program_1_CFLAGS = -O0 -g -fno-stack-protector -z execstack -no-pie -Wall -Wextra
 # vuln_program_1_CFLAGS = -g -fno-stack-protector -z execstack -no-pie -Wall -Wextra -Wl,-Ttext-segment=0x40000000
 vuln_program_2_CFLAGS = -fno-stack-protector -static -no-pie -Wall -Wextra
-vuln_program_3_CFLAGS = -fno-stack-protector -z execstack -no-pie -Wall -Wextra
+vuln_program_3_CFLAGS = -fno-stack-protector -z execstack -no-pie -Wall -Wextra -static
 
 PROGRAMS = vuln_program_1 vuln_program_2 vuln_program_3
 TARGETS = $(patsubst %,$(OUTPUT_DIR)/%,$(PROGRAMS))

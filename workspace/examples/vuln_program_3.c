@@ -3,44 +3,32 @@
 #include <string.h>
 #include <errno.h>
 
-__attribute__((naked)) void ldp_x0_x1_ret() {
-    __asm__(
-        "ldp x0, x1, [sp], #16\n"
-        "ret\n"
-    );
+char* process_input(char *buf) {
+    char newbuf[64];
+    int i , j =0;
+
+    if(strlen(buf) <=58)
+        for(i=0;i<strlen(buf);i++){
+            if(buf[i]>=32 && buf[i]<55){
+            newbuf[j++]=buf[i];
+                if(buf[i]=='\'')
+                    newbuf[j++]=buf[i];
+            }
+        }
+    else return 0;
+
+    if(j > i) {
+        strcpy(newbuf, buf);
+        printf("found me!\n");
+    }
+
+    newbuf[j]='\0';
+
+    return *newbuf;
 }
 
-__attribute__((naked)) void ldp_x1_x2_ret() {
-    __asm__(
-        "ldp x1, x2, [sp], #16\n"
-        "ret\n"
-    );
-}
-
-__attribute__((naked)) void ldr_x0_ret() {
-    __asm__(
-        "ldr x0, [sp], #8\n"
-        "ret\n"
-    );
-}
-
-__attribute__((naked)) void str_x1_x0_ret() {
-    __asm__(
-        "str x1, [x0]\n"
-        "ret\n"
-    );
-}
-
-int copyData(char *string)
-{
-	char buf[32];
-	strcpy(buf, string);
-	return (0);
-}
-
-int main(int argc, char *argv[])
-{
-	char buffer[700];
+int main(int argc, char *argv[]) {
+    char buffer[700];
 	FILE *file;
     if (argc !=2)
     {
@@ -50,7 +38,7 @@ int main(int argc, char *argv[])
 	printf("opening file\n");
 	file = fopen(argv[1],"rb");
 	if (!file)
-	{ 
+	{
 		//printf("file not opened %s", strerror(errno));
 		fprintf(stderr,"file not opened %s", strerror(errno));
 		//printf("error");
@@ -59,7 +47,6 @@ int main(int argc, char *argv[])
 	printf("file opened\n");
 	fread(buffer, 699,1,file);
 	fclose(file);
-	copyData(buffer);
-	return (0);
+    process_input(buffer);
+    return 0;
 }
-		
