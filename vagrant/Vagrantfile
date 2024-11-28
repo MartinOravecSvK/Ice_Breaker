@@ -1,0 +1,26 @@
+SETUP = "./setup_vagrant.sh"
+MEM = 512
+
+Vagrant.configure("2") do |config|
+    config.vm.define "box" do |box|
+            box.vm.box = "generic/ubuntu1804"
+            box.vm.hostname = "ubuntu-1804-64"
+
+            box.vm.provider:virtualbox do |vb|
+                vb.name = "ubuntu-1804-64"
+                vb.memory = MEM
+                config.vm.synced_folder "./workspace", "/home/vagrant/workspace"
+            end
+            box.vm.provider:libvirt do |lv|
+                lv.memory = MEM
+                lv.cpus = 2
+                # config.vm.synced_folder "./synced", "/home/vagrant/synced", type:"nfs", nfs_udp:false
+            end
+            box.vm.provider:hyperv do |hv|
+                hv.memory = MEM
+                config.vm.synced_folder "./workspace", "/home/vagrant/workspace"
+            end
+
+    config.vm.provision "shell", path: SETUP
+    end
+end
