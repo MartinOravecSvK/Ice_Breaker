@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 import re
 import subprocess as subp
@@ -17,8 +15,7 @@ def find_offset(binary_path):
         "set pagination off",
         "break main",
         "run",
-        "finish",  # Finish main to reach the point after buffer is filled
-        # Examine the stack pointer
+        "finish",
         "info frame",
         "info symbol __stack_chk_guard",
         "quit"

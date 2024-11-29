@@ -63,7 +63,7 @@ Determines the exact offset required to overwrite the saved return address in th
 **Example Usage**:
 
 ```bash
-python3 offset_finder.py --binary /workspace/vulnerable_binary --max_length 2048 --input_method stdin
+python3 offset_finder.py --binary /workspace/vulnerable_binary --max-length 2048 --input-method stdin
 ```
 
 Arguments:
@@ -101,7 +101,7 @@ Integrates the findings from the previous scripts to construct the final exploit
 
 Example Usage:
 ```bash
-python3 exploit_generator.py --binary /workspace/vulnerable_binary --arch aarch64 --input_method stdin --padding_file padding --max_length 2048
+python3 exploit_generator.py --binary /workspace/vulnerable_binary --arch arm64 --input_method stdin --padding-file padding --max-length 2048
 ```
 
 Arguments:
