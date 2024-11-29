@@ -4,7 +4,7 @@ import subprocess as subp
 from pwn import *
 import argparse
 
-DEFAULT_MAX_LENGTH = 1024
+DEFAULT_MAX_LENGTH = 2048
 DEFAULT_PADDING_FILE = "padding"
 
 def create_padding_file(filename, content):
@@ -13,40 +13,67 @@ def create_padding_file(filename, content):
         f.write(content)
     log.info(f"Padding file '{filename}' created/updated.")
 
-def is_pc_in_pattern(pc, n):
-    """Check if the PC value points to a location within the cyclic pattern."""
+def is_value_in_pattern(value, n, bits):
+    """Check if the value points to a location within the cyclic pattern."""
     try:
-        _ = cyclic_find(p64(pc)[:n], n=n)
-        return True
+        if bits == 32:
+            value &= 0xFFFFFFFF  # Mask to 32 bits
+            packed = p32(value)
+        else:
+            packed = p64(value)
+        offset = cyclic_find(packed[:n], n=n)
+        return offset
     except ValueError:
-        return False
+        return -1
+
+def get_architecture(binary_path):
+    """Get the architecture and bits of the binary."""
+    try:
+        elf = ELF(binary_path)
+        arch = elf.arch
+        bits = elf.bits
+        return arch, bits
+    except Exception as e:
+        log.error(f"Failed to parse ELF binary: {e}")
+        return None, None
 
 def find_offset(binary_path, 
-                n=4, 
-                max_length=DEFAULT_MAX_LENGTH, 
-                input_method='stdin', 
-                input_arg=None, 
-                breakpoint_func='main',
-                padding_file=DEFAULT_PADDING_FILE,
-                keep_file=False):
+               max_length=DEFAULT_MAX_LENGTH, 
+               input_method='stdin', 
+               input_arg=None, 
+               breakpoint_func='copyData',
+               padding_file=DEFAULT_PADDING_FILE,
+               keep_file=False):
     """
     Finds the offset to overwrite the return address in the vulnerable binary.
-
-    :param binary_path: Path to the binary
-    :param n: Size of unique cyclic pattern elements
-    :param max_length: Maximum length of the cyclic pattern
-    :param input_method: 'stdin' or 'file'
-    :param input_arg: Additional arguments if needed for 'file' input method
-    :param breakpoint_func: Function name to set breakpoint on
-    :param padding_file: Name of the padding file
-    :param keep_file: Keep the padding file after execution if True
-    :return: Offset to overwrite the return address, or -1 if not found
     """
-    low = 0
+    arch, bits = get_architecture(binary_path)
+    if arch is None or bits is None:
+        log.error("Could not determine architecture. Exiting.")
+        return -1
+
+    log.info(f"Detected architecture: {arch}, {bits}-bit")
+
+    # Set word size based on architecture
+    if bits == 64:
+        n = 8
+    else:
+        n = 4
+
+    # Registers to check based on architecture
+    if arch in ['arm', 'thumb', 'aarch64']:
+        registers = ['pc', 'lr', 'sp']
+    else:
+        log.error(f"Unsupported architecture: {arch}")
+        return -1
+
+    low = n  # Ensure at least n bytes
     high = max_length
 
-    while low < high:
+    while low <= high:
         guess = (low + high) // 2
+        if guess < n:
+            guess = n
         padding = cyclic(guess, n=n)
 
         # Ensure padding file is created/updated
@@ -55,27 +82,19 @@ def find_offset(binary_path,
         # Prepare GDB commands
         gdb_commands = [
             "set pagination off",
-            f"break {breakpoint_func}",
-            "run"
+            "handle SIGSEGV stop",
+            "handle SIGBUS stop",
+            "run" + (" " + (f"{input_arg} " if input_arg else "") + padding_file if input_method == 'file' else f" < {padding_file}"),
+            "info registers pc lr sp",
+            "quit"
         ]
-
-        gdb_commands[2] += f" < {padding_file}"
-        
-        # Continue execution until crash
-        gdb_commands.append("continue")
-        # After crash, get PC
-        gdb_commands.append("info registers pc")
 
         # Run GDB with the commands
-        gdb_cmd = [
-            "gdb", "--batch",
-            "--ex", gdb_commands[0],
-            "--ex", gdb_commands[1],
-            "--ex", gdb_commands[2],
-            "--ex", gdb_commands[3],
-            "--ex", gdb_commands[4],
-            binary_path
-        ]
+        # Use 'gdb-multiarch' for cross-architecture debugging
+        gdb_cmd = ["gdb-multiarch", "--batch"]
+        for cmd in gdb_commands:
+            gdb_cmd.extend(["--ex", cmd])
+        gdb_cmd.append(binary_path)
 
         try:
             gdb_output = subp.run(gdb_cmd, stdout=subp.PIPE, stderr=subp.PIPE, text=True).stdout
@@ -83,27 +102,44 @@ def find_offset(binary_path,
             # Debugging: Print GDB output
             print(f"GDB Output:\n{gdb_output}")
 
-            # Extract PC value
+            found_offset = -1
+            for reg in registers:
+                # Extract register value
+                reg_match = re.search(rf'{reg}\s+(0x[a-fA-F0-9]+)', gdb_output)
+                if reg_match:
+                    reg_value = int(reg_match.group(1), 16)
+                    log.info(f"Extracted {reg.upper()}: {hex(reg_value)}")
+
+                    offset = is_value_in_pattern(reg_value, n, bits)
+                    if offset != -1:
+                        log.info(f"Found offset: {offset} (via {reg.upper()})")
+                        return offset
+                else:
+                    log.warning(f"Could not extract {reg.upper()} from GDB output.")
+            # No matching register value found, adjust search range
+            log.warning("No matching register value found in cyclic pattern. Adjusting search range.")
+
+            # Adjust search range based on PC low byte
+            # Assuming little endian
+            # Extract PC low byte
             pc_match = re.search(r'pc\s+(0x[a-fA-F0-9]+)', gdb_output)
-            if not pc_match:
-                log.error("Failed to extract PC value from GDB output.")
-                return -1
-
-            pc = int(pc_match.group(1), 16)
-            log.info(f"Extracted PC: {hex(pc)}")
-
-            # Check if the PC is within the cyclic pattern
-            if is_pc_in_pattern(pc, n):
-                offset = cyclic_find(p64(pc)[:n], n=n)
-                log.info(f"Found offset: {offset}")
-                return offset
-            else:
-                log.warning(f"PC {hex(pc)} not in cyclic pattern. Adjusting search range.")
-                # Adjust search range heuristically
-                if pc < int.from_bytes(cyclic(guess, n=n)[-1:], "little"):
-                    high = guess
+            if pc_match:
+                pc_val = int(pc_match.group(1), 16)
+                reg_low_byte = pc_val & 0xFF
+                # Get the last byte of the current padding
+                sample_last_byte = padding[-1]
+                # In Python 3, padding[-1] is already an integer
+                sample_last_byte_val = sample_last_byte
+                log.info(f"PC low byte: {reg_low_byte}, Pattern last byte: {sample_last_byte_val}")
+                if reg_low_byte < sample_last_byte_val:
+                    high = guess - 1
                 else:
                     low = guess + 1
+            else:
+                # If no PC match, adjust low
+                log.warning("Could not find PC register value, adjusting low.")
+                low = guess + 1
+
         except Exception as e:
             log.error(f"GDB failed: {e}")
             return -1
@@ -118,106 +154,27 @@ def find_offset(binary_path,
     return -1
 
 def find_offset_file(binary_path, 
-                n=4, 
                 max_length=DEFAULT_MAX_LENGTH, 
-                input_method='stdin', 
+                input_method='file', 
                 input_arg=None, 
-                breakpoint_func='main',
+                breakpoint_func='copyData',
                 padding_file=DEFAULT_PADDING_FILE,
                 keep_file=False):
     """
     Finds the offset to overwrite the return address in the vulnerable binary.
-
-    :param binary_path: Path to the binary
-    :param n: Size of unique cyclic pattern elements (e.g., 4 bytes for 32-bit)
-    :param max_length: Maximum length of the cyclic pattern
-    :param input_method: 'stdin' or 'file'
-    :param input_arg: Additional arguments if needed for 'file' input method
-    :param breakpoint_func: Function name to set breakpoint on
-    :param padding_file: Name of the padding file
-    :param keep_file: Keep the padding file after execution if True
-    :return: Offset to overwrite the return address, or -1 if not found
     """
-    low = 0
-    high = max_length
-
-    while low < high:
-        guess = (low + high) // 2
-        padding = cyclic(guess, n=n)
-
-        # Ensure padding file is created/updated
-        create_padding_file(padding_file, padding)
-
-        # Prepare GDB commands
-        gdb_commands = [
-            "set pagination off",
-            f"break {breakpoint_func}",
-            "run",
-            "handle SIGBUS stop",  # Stop at SIGBUS to inspect registers
-            "info registers pc",   # Extract PC value
-            "continue"             # Continue after inspecting PC
-        ]
-
-        if input_arg:
-            # If the program requires additional arguments before the file
-            gdb_commands[2] += f" {input_arg} {padding_file}"
-        else:
-            # Pass the padding file as the sole argument
-            gdb_commands[2] += f" {padding_file}"
-
-        # Run GDB with the commands
-        gdb_cmd = [
-            "gdb", "--batch",
-            "--ex", gdb_commands[0],
-            "--ex", gdb_commands[1],
-            "--ex", gdb_commands[2],
-            "--ex", gdb_commands[3],
-            "--ex", gdb_commands[4],
-            binary_path
-        ]
-
-        try:
-            gdb_output = subp.run(gdb_cmd, stdout=subp.PIPE, stderr=subp.PIPE, text=True).stdout
-
-            # Debugging: Print GDB output
-            print(f"GDB Output:\n{gdb_output}")
-
-            # Extract PC value
-            pc_match = re.search(r'pc\s+(0x[a-fA-F0-9]+)', gdb_output)
-            if not pc_match:
-                log.error("Failed to extract PC value from GDB output.")
-                return -1
-
-            pc = int(pc_match.group(1), 16)
-            log.info(f"Extracted PC: {hex(pc)}")
-
-            # Convert the PC to bytes and find its position in the pattern
-            pc_bytes = p64(pc)[:n]
-            try:
-                offset = cyclic_find(pc_bytes, n=n)
-                log.info(f"Found offset: {offset}")
-                return offset
-            except ValueError:
-                log.warning("PC not found in the cyclic pattern. Adjusting search range.")
-                # Simple heuristic: if PC is lower than the last byte of the pattern, adjust high
-                if pc < int.from_bytes(cyclic(guess, n=n)[-1:], "little"):
-                    high = guess
-                else:
-                    low = guess + 1
-        except Exception as e:
-            log.error(f"GDB failed: {e}")
-            return -1
-    if not keep_file:
-        try:
-            os.remove(padding_file)
-            log.info(f"Padding file '{padding_file}' removed.")
-        except FileNotFoundError:
-            log.warning(f"Padding file '{padding_file}' not found for cleanup.")
-    log.error("Offset not found.")
-    return -1
+    return find_offset(
+        binary_path=binary_path,
+        max_length=max_length,
+        input_method=input_method,
+        input_arg=input_arg,
+        breakpoint_func=breakpoint_func,
+        padding_file=padding_file,
+        keep_file=keep_file
+    )
 
 def main():
-    parser = argparse.ArgumentParser(description="Offset Finder Script")
+    parser = argparse.ArgumentParser(description="Offset Finder Script for ARM architectures")
     parser.add_argument("--binary", required=True, help="Path to the vulnerable binary.")
     parser.add_argument("--input-method", choices=['stdin', 'file'], default='stdin', help="Method of input: 'stdin' or 'file'.")
     parser.add_argument("--input-arg", help="Additional argument if needed for 'file' input method.")
@@ -234,6 +191,15 @@ def main():
     # Test offset finding
     log.info(f"Testing offset finding for binary: {args.binary}")
     if args.input_method == 'file':
+        print(
+            args.binary,
+            args.max_length,
+            args.input_method,
+            args.input_arg,
+            args.breakpoint,
+            args.padding_file,
+            args.keep_file
+        )
         offset = find_offset_file(
             binary_path=args.binary,
             max_length=args.max_length,
@@ -261,4 +227,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

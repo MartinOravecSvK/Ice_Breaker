@@ -2,6 +2,35 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+
+void gadget() {
+    asm volatile (
+        "ldp x0, x1, [sp]\n" // Load two values from the stack into x0 and x1
+        "ret\n"              // Return
+    );
+}
+
+void gadget2() {
+    asm volatile (
+        "str x1, [x0]\n" // Store the value in x1 to the address in x0
+    );
+}
+
+void gadget3() {
+    asm volatile (
+        "mov x8, #0xdd\n" // syscall number for execve (hexadecimal)
+        "ret\n"
+    );
+}
+
+void gadget_svc() {
+    asm volatile (
+        "svc #0\n"
+        "ret\n"
+    );
+}
+
+
 int copyData(char *string)
 {
 	char buf[32];

@@ -32,18 +32,28 @@ def extract_gadget(md, code, base_addr, insn):
 
     for gadget_insn in gadget_insns:
         # Load/Store
-        if gadget_insn.mnemonic == "ldp" and "x0" in gadget_insn.op_str and "x1" in gadget_insn.op_str:
-            mapping["ldp x0, x1; ret"] = gadget_insn.address
-        elif gadget_insn.mnemonic == "ldp" and "x1" in gadget_insn.op_str and "x2" in gadget_insn.op_str:
-            mapping["ldp x1, x2; ret"] = gadget_insn.address
-        elif gadget_insn.mnemonic == "ldr" and "[sp]" in gadget_insn.op_str:
-            if "x0" in gadget_insn.op_str:
-                mapping["ldr x0, [sp], #8 ; ret"] = gadget_insn.address
-            elif "x8" in gadget_insn.op_str:
-                mapping["ldr x8, [sp], #8 ; ret"] = gadget_insn.address
-        elif gadget_insn.mnemonic == "str" and "x1" in gadget_insn.op_str and "[x0]" in gadget_insn.op_str:
+        # if gadget_insn.mnemonic == "ldp" and "x0" in gadget_insn.op_str and "x1" in gadget_insn.op_str:
+        #     mapping["ldp x0, x1; ret"] = gadget_insn.address
+        # elif gadget_insn.mnemonic == "ldp" and "x1" in gadget_insn.op_str and "x2" in gadget_insn.op_str:
+        #     mapping["ldp x1, x2; ret"] = gadget_insn.address
+        # elif gadget_insn.mnemonic == "ldr" and "[sp]" in gadget_insn.op_str:
+        #     if "x0" in gadget_insn.op_str:
+        #         mapping["ldr x0, [sp], #8 ; ret"] = gadget_insn.address
+        #     elif "x8" in gadget_insn.op_str:
+        #         mapping["ldr x8, [sp], #8 ; ret"] = gadget_insn.address
+        # elif gadget_insn.mnemonic == "str" and "x1" in gadget_insn.op_str and "[x0]" in gadget_insn.op_str:
+        #     mapping["str x1, [x0]; ret"] = gadget_insn.address
+        if gadget_insn.mnemonic == "ldp" and "x0, x1, [sp]" in gadget_insn.op_str:
+            mapping["ldp x0, x1, [sp]; ret"] = gadget_insn.address
+        elif gadget_insn.mnemonic == "ldp" and "x1, x2, [sp]" in gadget_insn.op_str:
+            mapping["ldp x1, x2, [sp]; ret"] = gadget_insn.address
+        elif gadget_insn.mnemonic == "str" and "x1, [x0]" in gadget_insn.op_str:
             mapping["str x1, [x0]; ret"] = gadget_insn.address
-        
+        elif gadget_insn.mnemonic == "mov" and gadget_insn.op_str == "x8, #0xdd":
+            mapping["mov x8, #0xdd; ret"] = gadget_insn.address
+        elif gadget_insn.mnemonic == "svc" and "#0" in gadget_insn.op_str:
+            mapping["svc #0"] = gadget_insn.address
+
         # Arithmetic
         elif gadget_insn.mnemonic == "add" and "x0" in gadget_insn.op_str:
             mapping["add x0, x1, x2 ; ret"] = gadget_insn.address
